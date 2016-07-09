@@ -9,6 +9,7 @@
 ## Usage
 
 Create directory under `models/` with its model name.
+
 Place `train.txt`, `test.txt` and `encode.txt` under the directory.
 
 ### Train model

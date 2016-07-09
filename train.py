@@ -79,9 +79,9 @@ def main(args):
                 train_cost_epoch += train_cost_batch * n_samples_batch
                 
                 continuous = model.predict(x_chars_batch, x_masks_batch)
-                # embeddings = model.embed(x_chars_batch, x_masks_batch)
                 train_result['prediction_scores'].extend(continuous)
-                # train_result['embeddings'].extend(embeddings)
+                if args.save_encoding:
+                    train_result['embeddings'].extend(model.embed(x_chars_batch, x_masks_batch))
                 binary_prdedictions_train.extend(np.around(continuous).astype(int).tolist())
                 binary_targets_train.extend(y_batch.tolist())
                 
@@ -107,9 +107,9 @@ def main(args):
             
             for x_chars_batch, x_masks_batch, y_batch in batches(x_chars_test, x_masks_test, y_test):
                 continuous = model.predict(x_chars_batch, x_masks_batch)
-                # embeddings = model.embed(x_chars_batch, x_masks_batch)
                 test_result['prediction_scores'].extend(continuous)
-                # test_result['embeddings'].extend(embeddings)
+                if args.save_encoding:
+                    test_result['embeddings'].extend(model.embed(x_chars_batch, x_masks_batch))
                 binary_prdedictions_test.extend(np.around(continuous).astype(int).tolist())
                 binary_targets_test.extend(y_batch.tolist())
             
@@ -142,5 +142,6 @@ if __name__ == '__main__':
     parser.add_argument('--train_path', default='train.txt', help='train file name')
     parser.add_argument('--test_path', default='test.txt', help='test file name')
     parser.add_argument('--load_model', action="store_true", help='use trained model')
+    parser.add_argument('--save_encoding', action="store_true", help='save encoding of training and test samples')
     args = parser.parse_args()
     main(args)
