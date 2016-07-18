@@ -25,7 +25,9 @@ def main(args):
     y = vectorize_y(labels_encode, labels_dict)
     
     print("Loading model from {}...".format(model_path(model_name, BEST_MODEL_FILE)))
-    model = Seyade(model_name).load()
+    model = Seyade(model_name)
+    model.build(n_chars, n_classes)
+    model.load_params()
     
     print("Encoding and predicting...")
     

@@ -4,6 +4,7 @@ import theano
 import time
 import io
 import sys
+import os.path
 import argparse
 
 from datetime import timedelta
@@ -21,22 +22,15 @@ ENCODE_RESULT_FILE = 'encode_result.npz'
 
 # dimensions of network
 INPUT_DIM = 145 # max length of input text
-CHAR_DIM = 250 # embeddings for character
+CHAR_DIM = 500 # embeddings for character
 GRU_DIM = 500 # GRU layer
 EMBED_DIM = 500 # embeddings for document
 
 # other model hyper parameters
-SCALE = 0.1  # sclae of initial weight values
+SCALE = 0.1  # scale of initial weight values
 REGULARIZATION = 0.000001
-GRAD_CLIP = 0
 
 # training settings
-MAX_EPOCHS = 10
-BATCH_SIZE = 64
-TRAIN_STOP_RATE = 0.0001
-TRAIN_STOP_RANGE = 5
-
-# Frequencies
 DISPLAY_FREQUENCY = 5
 
 def model_path(model_name, file_name):
@@ -106,7 +100,7 @@ def shuffle_docs(x_chars, x_masks, y):
     p = np.random.permutation(len(x_chars))
     return x_chars[p], x_masks[p], y[p]
 
-def batches(x_chars, x_masks, y, size=BATCH_SIZE):
+def batches(x_chars, x_masks, y, size=64):
     return [(x_chars[p:p + size], x_masks[p:p + size], y[p:p + size]) for p in range(0, len(y), size)]
 
 def vectorize_x(docs, chars_dict):
@@ -160,34 +154,6 @@ class Seyade():
         self.n_classes =  self.params['W_classify'].shape[1]
         self.compile()
         return self
-
-    def compile(self):
-        """
-        Prepare model variables and functions
-        """
-        self.tensor_docs = theano.tensor.imatrix() # TensorType(int32, matrix)
-        self.tensor_masks = theano.tensor.fmatrix() # TensorType(float32, matrix)
-        self.tensor_labels = theano.tensor.imatrix() # TensorType(int32, vector)
-        self.init_network(self.params, self.tensor_docs, self.tensor_masks)
-        
-        loss = theano.tensor.mean(lasagne.objectives.binary_crossentropy(self.output_classify, self.tensor_labels))
-        penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2) * REGULARIZATION
-        self.cost = loss + penalty
-        
-        self.network_params = lasagne.layers.get_all_params(self.network)
-        updates = lasagne.updates.adam(self.cost, self.network_params)
-        
-        print("Compiling Training function...")
-        self.fn_train = theano.function([self.tensor_docs, self.tensor_masks, self.tensor_labels], self.cost, updates=updates)
-        
-        print("Compiling Prediction function...")
-        self.fn_predict = theano.function([self.tensor_docs, self.tensor_masks], self.output_classify)
-        
-        print("Compiling Encoding function...")
-        self.fn_embed = theano.function([self.tensor_docs, self.tensor_masks], self.output_embed)
-        
-        print("Compiling Regularization function...")
-        self.fn_penalty = theano.function([], penalty)
     
     def init_params(self):
         """
@@ -207,24 +173,24 @@ class Seyade():
         params['W_f_reset']  = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
         params['W_f_update'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
         params['W_f_hidden'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
-        params['b_f_reset']  = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
-        params['b_f_update'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
-        params['b_f_hidden'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
         params['U_f_reset']  = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
         params['U_f_update'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
         params['U_f_hidden'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
+        params['b_f_reset']  = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
+        params['b_f_update'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
+        params['b_f_hidden'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
         params['hit_init_f'] = theano.shared(np.zeros((1, GRU_DIM)).astype('float32'))
         
         # b-GRU layer
         params['W_b_reset']  = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
         params['W_b_update'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
         params['W_b_hidden'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(CHAR_DIM, GRU_DIM)).astype('float32'))
-        params['b_b_reset']  = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
-        params['b_b_update'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
-        params['b_b_hidden'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
         params['U_b_reset']  = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
         params['U_b_update'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
         params['U_b_hidden'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, GRU_DIM)).astype('float32'))
+        params['b_b_reset']  = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
+        params['b_b_update'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
+        params['b_b_hidden'] = theano.shared(np.zeros((GRU_DIM)).astype('float32'))
         params['hid_init_b'] = theano.shared(np.zeros((1, GRU_DIM)).astype('float32'))
         
         # dense layers
@@ -232,6 +198,9 @@ class Seyade():
         params['W_b_dense'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, EMBED_DIM)).astype('float32'))
         params['b_f_dense'] = theano.shared(np.zeros((EMBED_DIM)).astype('float32'))
         params['b_b_dense'] = theano.shared(np.zeros((EMBED_DIM)).astype('float32'))
+        
+        params['W_dense'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(GRU_DIM, EMBED_DIM)).astype('float32'))
+        params['b_dense'] = theano.shared(np.zeros((EMBED_DIM)).astype('float32'))
         
         # softmax layer
         params['W_classify'] = theano.shared(np.random.normal(loc=0., scale=SCALE, size=(EMBED_DIM, self.n_classes)).astype('float32'))
@@ -243,68 +212,109 @@ class Seyade():
         """
         Save model parameters
         """
-        save_params = OrderedDict()
-        for k, v in self.params.items():
-            if type(v) is theano.tensor.sharedvar.TensorSharedVariable:
-                save_params[k] = v.get_value()
-            else:
-                save_params[k] = v
+        save_params = lasagne.layers.get_all_param_values(self.network)
+        np.savez(self.file_path(BEST_MODEL_FILE), save_params)
         
-        np.savez(self.file_path(BEST_MODEL_FILE), **save_params)
+        # save_params = OrderedDict()
+        # for k, v in self.params.items():
+        #     if hasattr(v, 'get_value'):
+        #     # if type(v) is theano.tensor.sharedvar.TensorSharedVariable:
+        #         save_params[k] = v.get_value()
+        #     else:
+        #         save_params[k] = v
+        #
+        # np.savez(self.file_path(BEST_MODEL_FILE), **save_params)
     
     def load_params(self):
         """
         Load previously saved model
         """
-        params = OrderedDict()
-        with io.open(self.file_path(BEST_MODEL_FILE), 'rb') as f:
-            npzfile = np.load(f)
-            for k, v in npzfile.items():
-                params[k] = v
+        npz = np.load(self.file_path(BEST_MODEL_FILE)).items()
+        lasagne.layers.set_all_param_values(self.network, npz[0][1])
         
-        return params
+        # params = OrderedDict()
+        # with io.open(self.file_path(BEST_MODEL_FILE), 'rb') as f:
+        #     npzfile = np.load(f)
+        #     for k, v in npzfile.items():
+        #         params[k] = v
+        # 
+        # return params
     
-    def init_network(self, params, tensor_docs, tensor_masks):
+    def init_network(self, tensor_docs, tensor_masks):
         
         # Input layer over characters
-        l_input = lasagne.layers.InputLayer(shape=(BATCH_SIZE, INPUT_DIM), input_var=tensor_docs)
+        l_input = lasagne.layers.InputLayer(shape=(None, INPUT_DIM), input_var=tensor_docs)
         
         # Character embedding layer
-        l_char_embed = lasagne.layers.EmbeddingLayer(l_input, input_size=self.n_chars, output_size=CHAR_DIM, W=params['W_char_embed'])
+        l_char_embed = lasagne.layers.EmbeddingLayer(l_input, input_size=self.n_chars, output_size=CHAR_DIM, W=self.params['W_char_embed'])
         
         # Mask layer for variable length sequences
-        l_mask = lasagne.layers.InputLayer(shape=(BATCH_SIZE, INPUT_DIM), input_var=tensor_masks)
+        l_mask = lasagne.layers.InputLayer(shape=(None, INPUT_DIM), input_var=tensor_masks)
         
         # forward-GRU cells and layer
-        gate_f_reset  = lasagne.layers.Gate(W_in=params['W_f_reset'],  W_hid=params['U_f_reset'],  W_cell=None, b=params['b_f_reset'],  nonlinearity=lasagne.nonlinearities.sigmoid)
-        gate_f_update = lasagne.layers.Gate(W_in=params['W_f_update'], W_hid=params['U_f_update'], W_cell=None, b=params['b_f_update'], nonlinearity=lasagne.nonlinearities.sigmoid)
-        gate_f_hidden = lasagne.layers.Gate(W_in=params['W_f_hidden'], W_hid=params['U_f_hidden'], W_cell=None, b=params['b_f_hidden'], nonlinearity=lasagne.nonlinearities.elu)
-        l_f_gru = lasagne.layers.GRULayer(l_char_embed, GRU_DIM, resetgate=gate_f_reset, updategate=gate_f_update, hidden_update=gate_f_hidden, hid_init=params['hit_init_f'], backwards=False, learn_init=True, gradient_steps=-1, grad_clipping=GRAD_CLIP, unroll_scan=False, precompute_input=True, mask_input=l_mask)
+        gate_f_reset  = lasagne.layers.Gate(W_in=self.params['W_f_reset'],  W_hid=self.params['U_f_reset'],  W_cell=None, b=self.params['b_f_reset'],  nonlinearity=lasagne.nonlinearities.sigmoid)
+        gate_f_update = lasagne.layers.Gate(W_in=self.params['W_f_update'], W_hid=self.params['U_f_update'], W_cell=None, b=self.params['b_f_update'], nonlinearity=lasagne.nonlinearities.sigmoid)
+        gate_f_hidden = lasagne.layers.Gate(W_in=self.params['W_f_hidden'], W_hid=self.params['U_f_hidden'], W_cell=None, b=self.params['b_f_hidden'], nonlinearity=lasagne.nonlinearities.elu)
+        l_f_gru = lasagne.layers.GRULayer(l_char_embed, GRU_DIM, resetgate=gate_f_reset, updategate=gate_f_update, hidden_update=gate_f_hidden, hid_init=self.params['hit_init_f'], backwards=False, learn_init=True, gradient_steps=-1, grad_clipping=0, unroll_scan=False, precompute_input=True, mask_input=l_mask)
         
         # backward-GRU cells and layer
-        gate_b_reset  = lasagne.layers.Gate(W_in=params['W_b_reset'],  W_hid=params['U_b_reset'],  W_cell=None, b=params['b_b_reset'],  nonlinearity=lasagne.nonlinearities.sigmoid)
-        gate_b_update = lasagne.layers.Gate(W_in=params['W_b_update'], W_hid=params['U_b_update'], W_cell=None, b=params['b_b_update'], nonlinearity=lasagne.nonlinearities.sigmoid)
-        gate_b_hidden = lasagne.layers.Gate(W_in=params['W_b_hidden'], W_hid=params['U_b_hidden'], W_cell=None, b=params['b_b_hidden'], nonlinearity=lasagne.nonlinearities.elu)
-        l_b_gru = lasagne.layers.GRULayer(l_char_embed, GRU_DIM, resetgate=gate_b_reset, updategate=gate_b_update, hidden_update=gate_b_hidden, hid_init=params['hid_init_b'], backwards=True, learn_init=True, gradient_steps=-1, grad_clipping=GRAD_CLIP, unroll_scan=False, precompute_input=True, mask_input=l_mask)
+        gate_b_reset  = lasagne.layers.Gate(W_in=self.params['W_b_reset'],  W_hid=self.params['U_b_reset'],  W_cell=None, b=self.params['b_b_reset'],  nonlinearity=lasagne.nonlinearities.sigmoid)
+        gate_b_update = lasagne.layers.Gate(W_in=self.params['W_b_update'], W_hid=self.params['U_b_update'], W_cell=None, b=self.params['b_b_update'], nonlinearity=lasagne.nonlinearities.sigmoid)
+        gate_b_hidden = lasagne.layers.Gate(W_in=self.params['W_b_hidden'], W_hid=self.params['U_b_hidden'], W_cell=None, b=self.params['b_b_hidden'], nonlinearity=lasagne.nonlinearities.elu)
+        l_b_gru = lasagne.layers.GRULayer(l_char_embed, GRU_DIM, resetgate=gate_b_reset, updategate=gate_b_update, hidden_update=gate_b_hidden, hid_init=self.params['hid_init_b'], backwards=True, learn_init=True, gradient_steps=-1, grad_clipping=0, unroll_scan=False, precompute_input=True, mask_input=l_mask)
         
         # Slice final states
         l_f_sliced = lasagne.layers.SliceLayer(l_f_gru, -1, 1)
         l_b_sliced = lasagne.layers.SliceLayer(l_b_gru,  0, 1)
         
-        
         # Dense layers
-        l_f_dense = lasagne.layers.DenseLayer(l_f_sliced, EMBED_DIM, W=params['W_f_dense'], b=params['b_f_dense'], nonlinearity=lasagne.nonlinearities.elu)
-        l_b_dense = lasagne.layers.DenseLayer(l_b_sliced, EMBED_DIM, W=params['W_b_dense'], b=params['b_b_dense'], nonlinearity=lasagne.nonlinearities.elu)
+        l_f_dense = lasagne.layers.DenseLayer(l_f_sliced, EMBED_DIM, W=self.params['W_f_dense'], b=self.params['b_f_dense'], nonlinearity=lasagne.nonlinearities.elu)
+        l_b_dense = lasagne.layers.DenseLayer(l_b_sliced, EMBED_DIM, W=self.params['W_b_dense'], b=self.params['b_b_dense'], nonlinearity=lasagne.nonlinearities.elu)
+        
+        # Dropout layers
+        l_f_drop = lasagne.layers.DropoutLayer(l_f_dense, p=0.2)
+        l_b_drop = lasagne.layers.DropoutLayer(l_b_dense, p=0.2)
         
         # Embed layer by elementwise sum
-        l_doc_embed = lasagne.layers.ElemwiseSumLayer([l_f_dense, l_b_dense], coeffs=1)
+        l_doc_embed = lasagne.layers.ElemwiseSumLayer([l_f_drop, l_b_drop], coeffs=1)
+        
+        l_dense = lasagne.layers.DenseLayer(l_doc_embed, 500, W=self.params['W_dense'], b=self.params['b_dense'], nonlinearity=lasagne.nonlinearities.elu)
+        l_dense = lasagne.layers.DropoutLayer(l_dense, p=0.2)
         
         # Dense layer for classes
-        l_classify = lasagne.layers.DenseLayer(l_doc_embed, self.n_classes, W=params['W_classify'], b=params['b_classify'], nonlinearity=lasagne.nonlinearities.sigmoid)
+        l_classify = lasagne.layers.DenseLayer(l_dense, self.n_classes, W=self.params['W_classify'], b=self.params['b_classify'], nonlinearity=lasagne.nonlinearities.sigmoid)
         
         self.network = l_classify
-        self.output_embed = lasagne.layers.get_output(l_doc_embed)
-        self.output_classify = lasagne.layers.get_output(l_classify)
+        self.output_embed = lasagne.layers.get_output(l_doc_embed, deterministic=True)
+    
+    def compile(self):
+        """
+        Prepare model variables and functions
+        """
+        
+        self.tensor_docs = theano.tensor.imatrix() # TensorType(int32, matrix)
+        self.tensor_masks = theano.tensor.fmatrix() # TensorType(float32, matrix)
+        self.tensor_labels = theano.tensor.imatrix() # TensorType(int32, vector)
+        self.init_network(self.tensor_docs, self.tensor_masks)
+        
+        loss = theano.tensor.mean(lasagne.objectives.binary_crossentropy(lasagne.layers.get_output(self.network), self.tensor_labels))
+        penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2) * REGULARIZATION
+        self.cost = loss + penalty
+        
+        self.network_params = lasagne.layers.get_all_params(self.network)
+        updates = lasagne.updates.adam(self.cost, self.network_params)
+        
+        print("Compiling Training function...")
+        self.fn_train = theano.function([self.tensor_docs, self.tensor_masks, self.tensor_labels], self.cost, updates=updates)
+        
+        print("Compiling Prediction function...")
+        self.fn_predict = theano.function([self.tensor_docs, self.tensor_masks], lasagne.layers.get_output(self.network, deterministic=True))
+        
+        print("Compiling Encoding function...")
+        self.fn_embed = theano.function([self.tensor_docs, self.tensor_masks], self.output_embed)
+        
+        print("Compiling Regularization function...")
+        self.fn_penalty = theano.function([], penalty)
     
     def train(self, X, X_mask, y):
         return float(self.fn_train(X, X_mask, y))
@@ -326,25 +336,7 @@ class Seyade():
     def save_result(self, result, file_name='result.npz'):
         np.savez(self.file_path(file_name), **result)
     
-    def load_result(self, threshold = 0.5):
-        
-        train_result = {}
-        with io.open(self.file_path(TRAIN_RESULT_FILE), 'rb') as f:
-            npzfile = np.load(f)
-            for k, v in npzfile.items():
-                train_result[k] = v
-        
-        test_result = {}
-        with io.open(self.file_path(TEST_RESULT_FILE), 'rb') as f:
-            npzfile = np.load(f)
-            for k, v in npzfile.items():
-                test_result[k] = v
-        
-        encode_result = {}
-        with io.open(self.file_path(ENCODE_RESULT_FILE), 'rb') as f:
-            npzfile = np.load(f)
-            for k, v in npzfile.items():
-                encode_result[k] = v
+    def load_result(self, threshold=0.5):
         
         with io.open(self.file_path(LABELS_DICT_FILE), 'rb') as f:
             self.labels_dict = pkl.load(f)
@@ -352,9 +344,21 @@ class Seyade():
         self.labels_dict_invert = {v: k for k, v in self.labels_dict.items()}
         self.labels_dict_invert[0] = '<unk>'
         
-        self.train_docs = self.build_docs(train_result, threshold)
-        self.test_docs = self.build_docs(test_result, threshold)
-        self.encode_docs = self.build_docs(encode_result, threshold)
+        self.train_docs = self.load_result_file(self.file_path(TRAIN_RESULT_FILE), threshold)
+        self.test_docs = self.load_result_file(self.file_path(TEST_RESULT_FILE), threshold)
+        self.encode_docs = self.load_result_file(self.file_path(ENCODE_RESULT_FILE), threshold)
+    
+    def load_result_file(self, path, threshold=0.5):
+        docs = []
+        if os.path.isfile(path):
+            result = {}
+            with io.open(path, 'rb') as f:
+                npzfile = np.load(f)
+                for k, v in npzfile.items():
+                    result[k] = v
+            docs = self.build_docs(result, threshold)
+        return docs
+        
     
     def build_docs(self, result, threshold = 0.5):
         docs = []

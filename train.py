@@ -34,13 +34,13 @@ def main(args):
     y_train = vectorize_y(labels_train, labels_dict)
     y_test = vectorize_y(labels_test, labels_dict)
     
+    print("Building network...")
     model = Seyade(model_name)
+    model.build(n_chars, n_classes)
+    
     if args.load_model:
         print("Loading model from {}...".format(model.file_path(BEST_MODEL_FILE)))
-        model.load()
-    else:
-        print("Building network...")
-        model.build(n_chars, n_classes)
+        model.load_params()
     
     print("Training...")
 
@@ -50,7 +50,7 @@ def main(args):
     test_precisions = []
     
     try:
-        for epoch in range(MAX_EPOCHS):
+        for epoch in range(args.epoch):
             
             print("Epoch {}".format(epoch))
             
@@ -69,7 +69,7 @@ def main(args):
             
             # batch training
             x_chars_train, x_masks_train, y_train = shuffle_docs(x_chars_train, x_masks_train, y_train)
-            for x_chars_batch, x_masks_batch, y_batch in batches(x_chars_train, x_masks_train, y_train):
+            for x_chars_batch, x_masks_batch, y_batch in batches(x_chars_train, x_masks_train, y_train, size=args.batch_size):
                 
                 batch_count += 1
                 n_samples_batch = len(x_chars_batch)
@@ -80,7 +80,7 @@ def main(args):
                 
                 continuous = model.predict(x_chars_batch, x_masks_batch)
                 train_result['prediction_scores'].extend(continuous)
-                if args.save_encoding:
+                if not args.skip_encoding:
                     train_result['embeddings'].extend(model.embed(x_chars_batch, x_masks_batch))
                 binary_prdedictions_train.extend(np.around(continuous).astype(int).tolist())
                 binary_targets_train.extend(y_batch.tolist())
@@ -91,7 +91,6 @@ def main(args):
             
             model.save_result(train_result, TRAIN_RESULT_FILE)
             model.save_params()
-            
             accuracy_train = jaccard_similarity_score(np.asarray(binary_targets_train), np.asarray(binary_prdedictions_train))
             precision_train = precision_score(np.asarray(binary_targets_train), np.asarray(binary_prdedictions_train), average='micro')
             recall_train = recall_score(np.asarray(binary_targets_train), np.asarray(binary_prdedictions_train), average='micro')
@@ -105,16 +104,15 @@ def main(args):
             binary_prdedictions_test = []
             binary_targets_test = []
             
-            for x_chars_batch, x_masks_batch, y_batch in batches(x_chars_test, x_masks_test, y_test):
+            for x_chars_batch, x_masks_batch, y_batch in batches(x_chars_test, x_masks_test, y_test, size=args.batch_size):
                 continuous = model.predict(x_chars_batch, x_masks_batch)
                 test_result['prediction_scores'].extend(continuous)
-                if args.save_encoding:
+                if not args.skip_encoding:
                     test_result['embeddings'].extend(model.embed(x_chars_batch, x_masks_batch))
                 binary_prdedictions_test.extend(np.around(continuous).astype(int).tolist())
                 binary_targets_test.extend(y_batch.tolist())
             
             model.save_result(test_result, TEST_RESULT_FILE)
-            
             
             # Dispalay training summary
             accuracy_test = jaccard_similarity_score(np.asarray(binary_targets_test), np.asarray(binary_prdedictions_test))
@@ -142,6 +140,8 @@ if __name__ == '__main__':
     parser.add_argument('--train_path', default='train.txt', help='train file name')
     parser.add_argument('--test_path', default='test.txt', help='test file name')
     parser.add_argument('--load_model', action="store_true", help='use trained model')
-    parser.add_argument('--save_encoding', action="store_true", help='save encoding of training and test samples')
+    parser.add_argument('--skip_encoding', action="store_true", help='skip encoding of training and test samples')
+    parser.add_argument('--epoch', default=10, type=int, help='number of training epochs')
+    parser.add_argument('--batch_size', default=64, type=int, help='batch size')
     args = parser.parse_args()
     main(args)

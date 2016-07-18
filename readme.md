@@ -28,9 +28,9 @@ $ python3 encode.py --model_name=mymodel
 
 ```python
 from shared import *
-model = Seyade('qiita_8k')
-model.load_result()
+model = Seyade('example')
 
+model.load_result()
 doc = model.train_docs[0]
 doc['text'] # => 'Lorem ipsum ...'
 doc['targets'] # => ['foo', 'baz']
@@ -38,13 +38,13 @@ doc['predictions'] # => ['foo', 'bar']
 doc['scored_predictions'] # => [('foo', 0.95), ('bar', 0.88)]
 doc['embedding'] # => array([ 0.1,  0.5, -0.9, ...])
 
-for doc in model.encode_docs:
+for doc in model.test_docs:
   print(doc['targets'], doc['scored_predictions'], doc['text'])
 
 # comparable precision@1 score with old method
 model.load_result(0)
 correct = 0
-for doc in model.encode_docs:
+for doc in model.test_docs:
   if doc['predictions'][0] in doc['targets']:
     correct += 1
 
@@ -60,3 +60,7 @@ for doc in model.test_docs:
 
 print(total, correct, correct / total)
 ```
+with io.open(model.file_path(BEST_MODEL_FILE), 'rb') as f:
+    npzfile = np.load(f)
+    for k, v in npzfile.items():
+        pass
